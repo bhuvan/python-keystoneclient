@@ -16,6 +16,8 @@
 #    under the License.
 
 import argparse
+import getpass
+import sys
 
 from keystoneclient.v2_0 import client
 from keystoneclient import utils
@@ -86,12 +88,38 @@ def do_user_update(kc, args):
         print 'Unable to update user: %s' % e
 
 
-@utils.arg('--pass', metavar='<password>', dest='passwd', required=True,
+@utils.arg('--pass', metavar='<password>', dest='passwd',
            help='Desired new password')
 @utils.arg('id', metavar='<user-id>', help='User ID to update')
 def do_user_password_update(kc, args):
     """Update user password"""
-    kc.users.update_password(args.id, args.passwd)
+    new_pass = args.passwd
+    if not new_pass:
+        # Prompt for password, if we got a tty
+        if hasattr(sys.stdin, 'isatty') and sys.stdin.isatty():
+            # Check for Ctl-D
+            try:
+                # try 3 times to get matching password
+                MAX_TRY = 3
+                for count in range(1, MAX_TRY + 1):
+                    new_pass = getpass.getpass(prompt='Password: ')
+                    if new_pass != getpass.getpass(prompt='Repeat Password: '):
+                        if count != MAX_TRY:
+                            print "Passwords do not match, please try again."
+                        else:
+                            print "Giving up ..."
+                    else:
+                        break
+                else:
+                    new_pass = None
+            except EOFError:
+                pass
+        # No tty or user entered Ctrl-D when prompted
+        if not new_pass:
+            print "Please specify new password in " \
+                  "command line, or using the prompt"
+            return
+    kc.users.update_password(args.id, new_pass)
 
 
 @utils.arg('id', metavar='<user-id>', help='User ID to delete')
@@ -140,7 +168,7 @@ def do_tenant_update(kc, args):
     kwargs = {}
     if args.name:
         kwargs.update({'name': args.name})
-    if args.description:
+    if args.description is not None:
         kwargs.update({'description': args.description})
     if args.enabled:
         kwargs.update({'enabled': utils.string_to_bool(args.enabled)})
